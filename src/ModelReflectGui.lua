@@ -53,7 +53,7 @@ local function OperationPanel(props: {
 				TextSize = 18,
 				TextColor3 = Colors.WHITE,
 				RichText = true,
-				Text = "<i>Click a plane to reflect a copy of the selection across it.</i>",
+				Text = "<i>Click on a surface to create a copy of the selection that is reflected over that surface.</i>",
 				TextWrapped = true,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextYAlignment = Enum.TextYAlignment.Top,
@@ -69,34 +69,32 @@ local function OperationPanel(props: {
 					CornerRadius = UDim.new(0, 4),
 				}),
 			}),
-			SelectAfterReflecting = e(Checkbox, {
-				Label = "Select reflected copy",
-				Checked = props.Settings.SelectReflectedCopy,
-				Changed = function(newValue: boolean)
-					props.Settings.SelectReflectedCopy = newValue
-					props.UpdatedSettings()
-				end,
+			SelectAfterReflecting = e(HelpGui.WithHelpIcon, {
 				LayoutOrder = 2,
+				Subject = e(Checkbox, {
+					Label = "Select reflected copy",
+					Checked = props.Settings.SelectReflectedCopy,
+					Changed = function(newValue: boolean)
+						props.Settings.SelectReflectedCopy = newValue
+						props.UpdatedSettings()
+					end,
+				}),
+				Help = e(HelpGui.BasicTooltip, {
+					HelpRichText = "Should the newly reflected copy be selected or should the original be left selected?",
+				}),
 			}),
-			CloseAfterReflecting = e(Checkbox, {
-				Label = "Keep open after reflecting",
-				Checked = props.Settings.KeepOpenAfterReflecting,
-				Changed = function(newValue: boolean)
-					props.Settings.KeepOpenAfterReflecting = newValue
-					props.UpdatedSettings()
-				end,
+			CloseAfterReflecting = e(HelpGui.WithHelpIcon, {
 				LayoutOrder = 3,
-			}),
-			Buttons = e("Frame", {
-				Size = UDim2.fromScale(1, 0),
-				AutomaticSize = Enum.AutomaticSize.Y,
-				LayoutOrder = 4,
-				BackgroundTransparency = 1,
-			}, {
-				ListLayout = e("UIListLayout", {
-					SortOrder = Enum.SortOrder.LayoutOrder,
-					FillDirection = Enum.FillDirection.Horizontal,
-					Padding = UDim.new(0, 4),
+				Subject = e(Checkbox, {
+					Label = "Keep open after reflecting",
+					Checked = props.Settings.KeepOpenAfterReflecting,
+					Changed = function(newValue: boolean)
+						props.Settings.KeepOpenAfterReflecting = newValue
+						props.UpdatedSettings()
+					end,
+				}),
+				Help = e(HelpGui.BasicTooltip, {
+					HelpRichText = "Should the <i>Model Reflect</i> window stay open after reflecting a copy over a plane, or close automatically?",
 				}),
 			}),
 		}),
@@ -147,6 +145,7 @@ local function FlipPanel(props: {
 			Size = UDim2.fromScale(1, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
+			LayoutOrder = 1,
 		}, {
 			ListLayout = e("UIListLayout", {
 				FillDirection = Enum.FillDirection.Horizontal,
@@ -181,14 +180,19 @@ local function FlipPanel(props: {
 				LayoutOrder = 3,
 			}),
 		}),
-		KeepOpenAfterFlipping = e(Checkbox, {
-			LayoutOrder = 4,
-			Label = "Keep open after flipping",
-			Checked = props.Settings.KeepOpenAfterFlipping,
-			Changed = function(newValue: boolean)
-				props.Settings.KeepOpenAfterFlipping = newValue
-				props.UpdatedSettings()
-			end,
+		KeepOpenAfterFlipping = e(HelpGui.WithHelpIcon, {
+			LayoutOrder = 2,
+			Subject = e(Checkbox, {
+				Label = "Keep open after flipping",
+				Checked = props.Settings.KeepOpenAfterFlipping,
+				Changed = function(newValue: boolean)
+					props.Settings.KeepOpenAfterFlipping = newValue
+					props.UpdatedSettings()
+				end,
+			}),
+			Help = e(HelpGui.BasicTooltip, {
+				HelpRichText = "Should the <i>Model Reflect</i> window stay open after flipping the selection over a local axis, or close automatically?",
+			}),
 		}),
 	})
 end
@@ -203,21 +207,28 @@ local function AdvancedPanel(props: {
 		Title = "Advanced",
 		LayoutOrder = props.LayoutOrder,
 	}, {
-		CutoffDelay = e(NumberInput, {
-			Label = "Fail after",
-			Unit = "seconds",
-			Value = props.Settings.CutoffDelay,
-			ValueEntered = function(newValue: number)
-				props.Settings.CutoffDelay = newValue
-			end,
+		CutoffDelay = e(HelpGui.WithHelpIcon, {
 			LayoutOrder = 1,
+			Subject = e(NumberInput, {
+				Label = "Fail after",
+				Unit = "seconds",
+				Value = props.Settings.CutoffDelay,
+				ValueEntered = function(newValue: number)
+					props.Settings.CutoffDelay = newValue
+					props.UpdatedSettings()
+				end,
+				LayoutOrder = 1,
+			}),
+			Help = e(HelpGui.BasicTooltip, {
+				HelpRichText = "To avoid Studio hanging, give up on reflecting a complex selection after this amount of time.",
+			}),
 		}),
 	})
 end
 
 local MODEL_REFLECT_CONFIG: PluginGuiTypes.PluginGuiConfig = {
 	PluginName = "Model Reflect",
-	PendingText = "Select at least one Part, Model, or Folder to duplicate.\nThen drag the handles to add or configure duplicates and hit Place to confirm.",
+	PendingText = "Select at least one Part, Model, or Folder to reflect.\nThen select a plane to reflect a copy of that geometry over.",
 	TutorialElement = nil,
 }
 
