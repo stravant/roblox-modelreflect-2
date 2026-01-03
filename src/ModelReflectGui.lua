@@ -206,6 +206,7 @@ local function AdvancedPanel(props: {
 	return e(SubPanel, {
 		Title = "Advanced",
 		LayoutOrder = props.LayoutOrder,
+		Padding = UDim.new(0, 4),
 	}, {
 		CutoffDelay = e(HelpGui.WithHelpIcon, {
 			LayoutOrder = 1,
@@ -217,10 +218,23 @@ local function AdvancedPanel(props: {
 					props.Settings.CutoffDelay = newValue
 					props.UpdatedSettings()
 				end,
-				LayoutOrder = 1,
 			}),
 			Help = e(HelpGui.BasicTooltip, {
 				HelpRichText = "To avoid Studio hanging, give up on reflecting a complex selection after this amount of time.",
+			}),
+		}),
+		MaxUnionDepth = e(HelpGui.WithHelpIcon, {
+			LayoutOrder = 2,
+			Subject = e(NumberInput, {
+				Label = "Max Union depth",
+				Value = props.Settings.MaxUnionDepth,
+				ValueEntered = function(newValue: number)
+					props.Settings.MaxUnionDepth = newValue
+					props.UpdatedSettings()
+				end,
+			}),
+			Help = e(HelpGui.BasicTooltip, {
+				HelpRichText = "Ignore unions nested deeper than this. The plugin doesn't hard fail when passing this limit because some large models may have one very deep branch in them but otherwise succeed.",
 			}),
 		}),
 	})
@@ -228,8 +242,10 @@ end
 
 local function ErrorDisplay(props: {
 	Message: string,
+	IsWarning: boolean,
 	LayoutOrder: number?,
 })
+	local messageColor = if props.IsWarning then Colors.WARNING_ORANGE else Colors.DARK_RED
 	local flashOnChange = function(textLabel: TextLabel)
 		if not textLabel then
 			return
@@ -239,11 +255,11 @@ local function ErrorDisplay(props: {
 				task.wait(0.2)
 				textLabel.TextColor3 = Colors.WHITE
 				task.wait(0.2)
-				textLabel.TextColor3 = Colors.DARK_RED
+				textLabel.TextColor3 = messageColor
 			end
 		end)
 		return function()
-			textLabel.TextColor3 = Colors.DARK_RED
+			textLabel.TextColor3 = messageColor
 			task.cancel(flashTask)
 		end
 	end
@@ -263,7 +279,7 @@ local function ErrorDisplay(props: {
 			Size = UDim2.fromScale(1, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			Text = props.Message,
-			TextColor3 = Colors.DARK_RED,
+			TextColor3 = messageColor,
 			Font = Enum.Font.SourceSansBold,
 			TextSize = 18,
 			BackgroundTransparency = 1,
@@ -289,6 +305,7 @@ local function ModelReflectGui(props: {
 	HandleAction: (string) -> (),
 	Panelized: boolean,
 	ErrorMessage: string?,
+	IsWarning: boolean,
 })
 	local nextOrder = createNextOrder()
 	return e(PluginGui, {
@@ -308,8 +325,8 @@ local function ModelReflectGui(props: {
 			AutomaticSize = Enum.AutomaticSize.Y,
 		}, {
 			Padding = e("UIPadding", {
-				PaddingTop = UDim.new(0, 12),
-				PaddingBottom = UDim.new(0, 12),
+				PaddingTop = UDim.new(0, 10),
+				PaddingBottom = UDim.new(0, 10),
 				PaddingLeft = UDim.new(0, 12),
 				PaddingRight = UDim.new(0, 12),
 			}),
@@ -344,6 +361,7 @@ local function ModelReflectGui(props: {
 		}),
 		ErrorMessageDisplay = e(ErrorDisplay, {
 			Message = props.ErrorMessage,
+			IsWarning = props.IsWarning,
 			LayoutOrder = nextOrder(),
 		}),
 	})

@@ -14,6 +14,8 @@ local copyPartProps = require("./copyPartProps")
 type ParamsInternal = {
 	WarnAt: number,
 	CutoffAt: number,
+	MaxUnionDepth: number,
+	Warning: string?,
 }
 
 local hasGivenStillWorkingMessage = false
@@ -25,7 +27,9 @@ local function tooLongCheck(params: ParamsInternal)
 		task.wait(0.1)
 	end
 	if now > params.CutoffAt then
-		error("Reflecting took too long. Modify the fail after setting to allow more time.")
+		local warning = "Reflecting took too long. Modify the fail after setting to allow more time."
+		params.Warning = warning
+		error(warning)
 	end
 end
 
@@ -177,9 +181,19 @@ local function GetSiblings(instance: Instance): {Instance}
 	end
 end
 
+local function trimMiddle(s: string, maxLength: number): string
+	if #s <= maxLength then
+		return s
+	else
+		local half = math.floor((maxLength - 1) / 2)
+		return string.sub(s, 1, half) .. "…" .. string.sub(s, -half)
+	end
+end
+
 local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[BasePart]: BasePart}, unionDepth: number, unionPath: string, params: ParamsInternal): BasePart?
-	if unionDepth > 10 then
-		print(unionDepth, unionPath)
+	if unionDepth > params.MaxUnionDepth then
+		warn("Ignoring deep union nesting at `"..unionPath.."` to avoid performance issues. You can try increasing the max union depth.")
+		params.Warning = `Ignoring union nested {unionDepth} deep at {trimMiddle(unionPath, 40)}, try adjusting max depth.`
 		return nil
 	end
 	tooLongCheck(params)
@@ -193,21 +207,26 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 		end
 		
 		local oldSiblings = GetSiblings(part)
+		local oldParent = part.Parent
 		local st1, err1 = pcall(function()
 			return SeparateUnion(part)
 		end)
 
 		if st1 then
 			local subParts: {BasePart} = err1
+			local reflectedSubParts: {BasePart} = {}
 			for i, subPart in subParts do
 				local newPart = ReflectPart(subPart, axis, replacementPartMap, unionDepth + 1, unionPath .. "." .. subPart.Name, params)
 				if newPart then
-					table.insert(subParts, newPart)
+					table.insert(reflectedSubParts, newPart)
+				else
+					-- Couldn't deal with the sub-part, remove it
+					subPart.Parent = nil
 				end
 			end
 
-			local st2, err2 = pcall(function()
-				local result = if isIntersection then IntersectTogether(subParts) else UnionTogether(subParts)
+			local st2, err2: PartOperation = pcall(function()
+				local result = if isIntersection then IntersectTogether(reflectedSubParts) else UnionTogether(reflectedSubParts)
 				copyUnionProperties(part, result)
 				replacementPartMap[part] = result
 				return result
@@ -215,6 +234,7 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 			if st2 then
 				local reflectedUnion = err2
 				-- Reparent the stuff
+				reflectedUnion.Parent = oldParent
 				for _, ch in children do
 					ch.Parent = reflectedUnion
 				end
@@ -223,12 +243,15 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				return reflectedUnion -- err is the returned union
 			else
 				local errString = (err2 :: any) :: string
-				local firstPart = subParts[1]
+				local firstPart = reflectedSubParts[1]
+				local warning
 				if firstPart then
-					warn("Error Unioning `"..firstPart:GetFullName().."`: "..errString)
+					warning = "Error Unioning `"..firstPart:GetFullName().."`: "..errString
 				else
-					warn("`"..part:GetFullName().."` contained an empty union, discarding it.")
+					warning = "`"..part:GetFullName().."` contained an empty union, discarding it."
 				end
+				warn(warning)
+				params.Warning = warning
 				-- Put back the children
 				for _, ch in children do
 					ch.Parent = part
@@ -251,7 +274,9 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				end
 			end
 
-			warn("Error Separating `"..part:GetFullName().."`: "..errString)
+			local warning = "Error Separating `"..part:GetFullName().."`: "..errString
+			warn(warning)
+			params.Warning = warning
 			-- Put back the children
 			for _, ch in children do
 				ch.Parent = part
@@ -268,6 +293,7 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 			replacementPartMap[part] = reNegated
 			return reNegated
 		else
+			notNegated.Parent = nil
 			return nil
 		end
 	else
@@ -448,16 +474,19 @@ end
 export type Params = {
 	Origin: Vector3,
 	Normal: Vector3,
-	CutoffDelay: number?,
+	CutoffDelay: number,
+	MaxUnionDepth: number,
 }
 
-local function doReflect(toReflect: {Instance}, params: Params): boolean
+local function doReflect(toReflect: {Instance}, params: Params): (boolean, string?)
 	hasGivenStillWorkingMessage = false
 	local axis = CFrame.lookAlong(params.Origin, params.Normal)
 	local cutoffDelay = params.CutoffDelay or math.huge
 	local paramsInternal = {
 		WarnAt = os.clock() + math.min(2, 0.5 * cutoffDelay),
 		CutoffAt = os.clock() + cutoffDelay,
+		MaxUnionDepth = params.MaxUnionDepth,
+		Warning = nil,
 	}
 	local success, err = pcall(function()
 		for i, instance in toReflect do
@@ -476,7 +505,7 @@ local function doReflect(toReflect: {Instance}, params: Params): boolean
 	if not success then
 		warn("Error reflecting parts: " .. err)
 	end
-	return success
+	return success, paramsInternal.Warning
 end
 
 return doReflect

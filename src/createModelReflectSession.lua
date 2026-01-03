@@ -243,11 +243,12 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 		end
 	end
 
-	local function reflectTargets(targets: {Instance}, basis: ReflectBasis): boolean
+	local function reflectTargets(targets: {Instance}, basis: ReflectBasis): (boolean, string?)
 		return doReflect(targets, {
 			Origin = basis.Origin,
 			Normal = basis.Normal,
 			CutoffDelay = currentSettings.CutoffDelay,
+			MaxUnionDepth = currentSettings.MaxUnionDepth,
 		})
 	end
 
@@ -258,8 +259,8 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 	session.Update = function()
 		
 	end
-	session.FlipAroundPivot = function(axis: Vector3): boolean
-		local success = reflectTargets(targets, {
+	session.FlipAroundPivot = function(axis: Vector3): (boolean, string?)
+		local success, warning = reflectTargets(targets, {
 			Origin = currentCenter.Position,
 			Normal = currentCenter:VectorToWorldSpace(axis),
 			CutoffDelay = currentSettings.CutoffDelay,
@@ -283,25 +284,24 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 			ChangeHistoryService:SetWaypoint("Redupe Changes")
 		end
 		recordingInProgress = startRecording()
-		return true
+		return true, warning
 	end
-	session.ReflectOverTarget = function(): boolean
+	session.ReflectOverTarget = function(): (boolean, string?)
 		if currentBasis then
 			local newTargets = {}
 			for i, target in targets do
 				local copy = target:Clone()
 				copy.Parent = target.Parent
-				copy.Name = "New"
 				newTargets[i] = copy
 			end
-			local success = reflectTargets(newTargets, currentBasis)
+			local success, warning = reflectTargets(newTargets, currentBasis)
 			if not success then
 				-- Cancel the recording to undo any partial changes
 				if recordingInProgress then
 					stopRecording(recordingInProgress)
 					recordingInProgress = startRecording()
 				end
-				return false
+				return false, warning
 			end
 			if currentSettings.SelectReflectedCopy then
 				Selection:Set(newTargets)
@@ -315,9 +315,10 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 				ChangeHistoryService:SetWaypoint("Redupe Changes")
 			end
 			recordingInProgress = nil
+			return true, warning
 		end
 		teardown()
-		return true
+		return true, nil
 	end
 	session.Destroy = function()
 		teardown()

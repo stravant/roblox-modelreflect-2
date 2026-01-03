@@ -31,7 +31,7 @@ local function getFilteredSelection(): { Instance }
 	return filtered
 end
 
-local ERROR_MESSAGE = "Error, see output for a detailed error message. If the input is complex you can try setting <i>\"Fail after\"</i> to a larger value."
+local GENERAL_ERROR_MESSAGE = "Operation took too long. Try adjusting <i>\"Fail after\"</i> to a larger value for very complex inputs."
 
 return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signal.Signal<>, setButtonActive: (active: boolean) -> ())
 	-- The current session
@@ -45,7 +45,12 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 	local pluginActive = false
 
 	local undoCn: RBXScriptConnection? = nil
-	local errorMessage: string? = nil
+
+	type WarningOrError = {
+		Message: string,
+		IsError: boolean,
+	}
+	local errorMessage: WarningOrError? = nil
 
 	local reactRoot: ReactRoblox.RootType? = nil
 	local reactScreenGui: LayerCollector? = nil
@@ -115,18 +120,23 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 				end,
 				HandleAction = handleAction,
 				Panelized = panel.Enabled,
-				ErrorMessage = errorMessage,
+				ErrorMessage = errorMessage and errorMessage.Message or nil,
+				IsWarning = errorMessage and not errorMessage.IsError or false,
 			}))
 		elseif reactRoot then
 			destroyReactRoot()
 		end
 	end
 
-	local function setErrorMessage(message: string?)
-		if errorMessage == message then
-			return
+	local function setErrorMessage(success: boolean, message: string?)
+		if message then
+			errorMessage = {
+				Message = if message then message else "",
+				IsError = not success,
+			}
+		else
+			errorMessage = nil
 		end
-		errorMessage = message
 		updateUI()
 	end
 
@@ -160,6 +170,7 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 				selectionChangedCn:Disconnect()
 				selectionChangedCn = nil
 			end
+			errorMessage = nil
 			session.Destroy()
 			session = nil
 			if mustRestoreSelectionChanged then
@@ -242,30 +253,30 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 			closeRequested()
 		elseif action == "reflect" then
 			assert(session)
-			local success = session.ReflectOverTarget()
+			local success, warning = session.ReflectOverTarget()
 			if success then
-				setErrorMessage(nil)
-				if activeSettings.KeepOpenAfterReflecting then
+				if activeSettings.KeepOpenAfterReflecting or warning ~= nil then
 					doReset()
+					setErrorMessage(success, warning)
 				else
 					closeRequested()
 				end
 			else
-				setErrorMessage(ERROR_MESSAGE)
+				setErrorMessage(success, GENERAL_ERROR_MESSAGE)
 			end
 		elseif action == "flipX" or action == "flipY" or action == "flipZ" then
 			assert(session)
 			assert(AXIS_FOR_ACTION[action], "Known axis action")
-			local success = session.FlipAroundPivot(AXIS_FOR_ACTION[action])
+			local success, warning = session.FlipAroundPivot(AXIS_FOR_ACTION[action])
 			if success then
-				setErrorMessage(nil)
-				if activeSettings.KeepOpenAfterFlipping then
+				if activeSettings.KeepOpenAfterFlipping or warning ~= nil then
 					doReset()
+					setErrorMessage(success, warning)
 				else
 					closeRequested()
 				end
 			else
-				setErrorMessage(ERROR_MESSAGE)
+				setErrorMessage(success, GENERAL_ERROR_MESSAGE)
 			end
 			updateUI()
 		elseif action == "reset" then
