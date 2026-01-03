@@ -155,7 +155,7 @@ local function FlipPanel(props: {
 			FlipX = e(EqualSizedOperationButton, {
 				Text = "Flip X",
 				Color = Color3.new(0.6, 0.1, 0.1),
-				Height = 36,
+				Height = 30,
 				OnClick = function()
 					props.HandleAction("flipX")
 				end,
@@ -164,7 +164,7 @@ local function FlipPanel(props: {
 			FlipY = e(EqualSizedOperationButton, {
 				Text = "Flip Y",
 				Color = Color3.new(0.1, 0.6, 0.1),
-				Height = 36,
+				Height = 30,
 				OnClick = function()
 					props.HandleAction("flipY")
 				end,
@@ -173,7 +173,7 @@ local function FlipPanel(props: {
 			FlipZ = e(EqualSizedOperationButton, {
 				Text = "Flip Z",
 				Color = Color3.new(0.1, 0.1, 0.6),
-				Height = 36,
+				Height = 30,
 				OnClick = function()
 					props.HandleAction("flipZ")
 				end,
