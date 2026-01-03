@@ -226,6 +226,56 @@ local function AdvancedPanel(props: {
 	})
 end
 
+local function ErrorDisplay(props: {
+	Message: string,
+	LayoutOrder: number?,
+})
+	local flashOnChange = function(textLabel: TextLabel)
+		if not textLabel then
+			return
+		end
+		local flashTask = task.spawn(function()
+			for i = 1, 4 do
+				task.wait(0.2)
+				textLabel.TextColor3 = Colors.WHITE
+				task.wait(0.2)
+				textLabel.TextColor3 = Colors.DARK_RED
+			end
+		end)
+		return function()
+			textLabel.TextColor3 = Colors.DARK_RED
+			task.cancel(flashTask)
+		end
+	end
+	return props.Message and e("Frame", {
+		Size = UDim2.fromScale(1, 0),
+		BackgroundTransparency = 1,
+		LayoutOrder = props.LayoutOrder,
+		AutomaticSize = Enum.AutomaticSize.Y,
+	}, {
+		Padding = e("UIPadding", {
+			PaddingTop = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, 12),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+		}),
+		Label = e("TextLabel", {
+			Size = UDim2.fromScale(1, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Text = props.Message,
+			TextColor3 = Colors.DARK_RED,
+			Font = Enum.Font.SourceSansBold,
+			TextSize = 18,
+			BackgroundTransparency = 1,
+			RichText = true,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			ref = flashOnChange,
+		}),
+	})
+end
+
 local MODEL_REFLECT_CONFIG: PluginGuiTypes.PluginGuiConfig = {
 	PluginName = "Model Reflect",
 	PendingText = "Select at least one Part, Model, or Folder to reflect.\nThen select a plane to reflect a copy of that geometry over.",
@@ -238,6 +288,7 @@ local function ModelReflectGui(props: {
 	UpdatedSettings: () -> (),
 	HandleAction: (string) -> (),
 	Panelized: boolean,
+	ErrorMessage: string?,
 })
 	local nextOrder = createNextOrder()
 	return e(PluginGui, {
@@ -289,6 +340,10 @@ local function ModelReflectGui(props: {
 			Settings = props.CurrentSettings,
 			UpdatedSettings = props.UpdatedSettings,
 			HandleAction = props.HandleAction,
+			LayoutOrder = nextOrder(),
+		}),
+		ErrorMessageDisplay = e(ErrorDisplay, {
+			Message = props.ErrorMessage,
 			LayoutOrder = nextOrder(),
 		}),
 	})

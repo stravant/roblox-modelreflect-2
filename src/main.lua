@@ -31,6 +31,8 @@ local function getFilteredSelection(): { Instance }
 	return filtered
 end
 
+local ERROR_MESSAGE = "Error, see output for a detailed error message. If the input is complex you can try setting <i>\"Fail after\"</i> to a larger value."
+
 return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signal.Signal<>, setButtonActive: (active: boolean) -> ())
 	-- The current session
 	local session: createModelReflectSession.ModelReflectSession? = nil
@@ -43,6 +45,7 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 	local pluginActive = false
 
 	local undoCn: RBXScriptConnection? = nil
+	local errorMessage: string? = nil
 
 	local reactRoot: ReactRoblox.RootType? = nil
 	local reactScreenGui: LayerCollector? = nil
@@ -104,6 +107,7 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 				GuiState = getGuiState(),
 				CurrentSettings = activeSettings,
 				UpdatedSettings = function()
+					errorMessage = nil
 					if session then
 						session.Update()
 					end
@@ -111,10 +115,19 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 				end,
 				HandleAction = handleAction,
 				Panelized = panel.Enabled,
+				ErrorMessage = errorMessage,
 			}))
 		elseif reactRoot then
 			destroyReactRoot()
 		end
+	end
+
+	local function setErrorMessage(message: string?)
+		if errorMessage == message then
+			return
+		end
+		errorMessage = message
+		updateUI()
 	end
 
 	local onSelectionChange
@@ -229,21 +242,32 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 			closeRequested()
 		elseif action == "reflect" then
 			assert(session)
-			session.ReflectOverTarget()
-			if activeSettings.KeepOpenAfterReflecting then
-				doReset()
+			local success = session.ReflectOverTarget()
+			if success then
+				setErrorMessage(nil)
+				if activeSettings.KeepOpenAfterReflecting then
+					doReset()
+				else
+					closeRequested()
+				end
 			else
-				closeRequested()
+				setErrorMessage(ERROR_MESSAGE)
 			end
 		elseif action == "flipX" or action == "flipY" or action == "flipZ" then
 			assert(session)
 			assert(AXIS_FOR_ACTION[action], "Known axis action")
-			session.FlipAroundPivot(AXIS_FOR_ACTION[action])
-			if activeSettings.KeepOpenAfterFlipping then
-				doReset()
+			local success = session.FlipAroundPivot(AXIS_FOR_ACTION[action])
+			if success then
+				setErrorMessage(nil)
+				if activeSettings.KeepOpenAfterFlipping then
+					doReset()
+				else
+					closeRequested()
+				end
 			else
-				closeRequested()
+				setErrorMessage(ERROR_MESSAGE)
 			end
+			updateUI()
 		elseif action == "reset" then
 			doReset()
 		elseif action == "togglePanelized" then

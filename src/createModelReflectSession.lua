@@ -243,8 +243,8 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 		end
 	end
 
-	local function reflectTargets(targets: {Instance}, basis: ReflectBasis)
-		doReflect(targets, {
+	local function reflectTargets(targets: {Instance}, basis: ReflectBasis): boolean
+		return doReflect(targets, {
 			Origin = basis.Origin,
 			Normal = basis.Normal,
 			CutoffDelay = currentSettings.CutoffDelay,
@@ -258,12 +258,21 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 	session.Update = function()
 		
 	end
-	session.FlipAroundPivot = function(axis: Vector3)
-		reflectTargets(targets, {
+	session.FlipAroundPivot = function(axis: Vector3): boolean
+		local success = reflectTargets(targets, {
 			Origin = currentCenter.Position,
 			Normal = currentCenter:VectorToWorldSpace(axis),
 			CutoffDelay = currentSettings.CutoffDelay,
 		})
+		if not success then
+			-- Cancel the recording to undo any partial changes
+			if recordingInProgress then
+				stopRecording(recordingInProgress)
+				recordingInProgress = startRecording()
+			end
+			return false
+		end
+
 		changeSignal:Fire()
 
 		-- Start new waypoint
@@ -274,8 +283,9 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 			ChangeHistoryService:SetWaypoint("Redupe Changes")
 		end
 		recordingInProgress = startRecording()
+		return true
 	end
-	session.ReflectOverTarget = function()
+	session.ReflectOverTarget = function(): boolean
 		if currentBasis then
 			local newTargets = {}
 			for i, target in targets do
@@ -284,7 +294,15 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 				copy.Name = "New"
 				newTargets[i] = copy
 			end
-			reflectTargets(newTargets, currentBasis)
+			local success = reflectTargets(newTargets, currentBasis)
+			if not success then
+				-- Cancel the recording to undo any partial changes
+				if recordingInProgress then
+					stopRecording(recordingInProgress)
+					recordingInProgress = startRecording()
+				end
+				return false
+			end
 			if currentSettings.SelectReflectedCopy then
 				Selection:Set(newTargets)
 			end
@@ -299,7 +317,7 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 			recordingInProgress = nil
 		end
 		teardown()
-		return session.GetState()
+		return true
 	end
 	session.Destroy = function()
 		teardown()

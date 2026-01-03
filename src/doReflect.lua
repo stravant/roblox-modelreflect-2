@@ -14,7 +14,6 @@ local copyPartProps = require("./copyPartProps")
 type ParamsInternal = {
 	WarnAt: number,
 	CutoffAt: number,
-	TimedOut: boolean,
 }
 
 local hasGivenStillWorkingMessage = false
@@ -459,7 +458,6 @@ local function doReflect(toReflect: {Instance}, params: Params): boolean
 	local paramsInternal = {
 		WarnAt = os.clock() + math.min(2, 0.5 * cutoffDelay),
 		CutoffAt = os.clock() + cutoffDelay,
-		TimedOut = false,
 	}
 	local success, err = pcall(function()
 		for i, instance in toReflect do
