@@ -4,15 +4,15 @@ local COMBINE_TOOLBAR = false
 local createSharedToolbar = require(script.Parent.Packages.createSharedToolbar)
 local Signal = require(script.Parent.Packages.Signal)
 
-local RIBBON_ICON = "rbxassetid://98256996626224"
-local TOOLTIP = "Activate Redupe plugin, opening the settings panel and activating the duplication dragger."
+local RIBBON_ICON = "rbxassetid://103973483658439"
+local TOOLTIP = "Choose a plane to reflect the selected model over."
 
 local setButtonActive: (active: boolean) -> () = nil
 local buttonClicked = Signal.new()
 
 if COMBINE_TOOLBAR then
 	local toolbarSettings: createSharedToolbar.SharedToolbarSettings = {
-		ButtonName = "Redupe",
+		ButtonName = "Reflect",
 		ButtonTooltip = TOOLTIP,
 		ButtonIcon = RIBBON_ICON,
 		ToolbarName = "GeomTools",
@@ -26,8 +26,8 @@ if COMBINE_TOOLBAR then
 		assert(toolbarSettings.Button):SetActive(active)
 	end
 else
-	local toolbar = plugin:CreateToolbar("Redupe")
-	local button = toolbar:CreateButton("openRedupe", TOOLTIP, RIBBON_ICON, "Redupe")
+	local toolbar = plugin:CreateToolbar("ModelReflect")
+	local button = toolbar:CreateButton("openReflect", TOOLTIP, RIBBON_ICON, "Reflect")
 	local clickCn = button.Click:Connect(function()
 		buttonClicked:Fire()
 	end)
@@ -66,7 +66,7 @@ local clickedCn = buttonClicked:Connect(function()
 	end
 end)
 
-panel.Title = "Redupe"
+panel.Title = "Model Reflect"
 panel.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 if panel.Enabled then
 	doInitialLoad()

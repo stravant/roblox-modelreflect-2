@@ -1,0 +1,2 @@
+* Fix CornerWedge not reflecting correctly
+* Make it understand CornerWedge / Wedge PartType correctly

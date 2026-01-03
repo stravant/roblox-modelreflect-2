@@ -8,9 +8,9 @@ local React = require(Packages.React)
 local ReactRoblox = require(Packages.ReactRoblox)
 local Signal = require(Packages.Signal)
 
-local createRedupeSession = require("./createRedupeSession")
+local createModelReflectSession = require("./createModelReflectSession")
 local Settings = require("./Settings")
-local RedupeGui = require("./RedupeGui")
+local ModelReflectGui = require("./ModelReflectGui")
 local PluginGuiTypes = require("./PluginGui/Types")
 
 local function getFilteredSelection(): { Instance }
@@ -33,7 +33,7 @@ end
 
 return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signal.Signal<>, setButtonActive: (active: boolean) -> ())
 	-- The current session
-	local session: createRedupeSession.RedupeSession? = nil
+	local session: createModelReflectSession.ModelReflectSession? = nil
 
 	local active = false
 
@@ -100,8 +100,7 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 			end
 
 			assert(reactRoot, "We just created it")
-			reactRoot:render(React.createElement(RedupeGui, {
-				CanPlace = session and session.CanPlace() or false,
+			reactRoot:render(React.createElement(ModelReflectGui, {
 				GuiState = getGuiState(),
 				CurrentSettings = activeSettings,
 				UpdatedSettings = function()
@@ -160,14 +159,17 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 		end
 	end
 
-	local function tryCreateSession(oldState: createRedupeSession.SessionState?)
+	local function tryCreateSession(oldState: createModelReflectSession.SessionState?)
 		if session then
 			destroySession()
 		end
 		local targets = getFilteredSelection()
 		if #targets > 0 then
-			local newSession = createRedupeSession(plugin, targets, activeSettings, oldState)
+			local newSession = createModelReflectSession(plugin, targets, activeSettings, oldState)
 			newSession.ChangeSignal:Connect(updateUI)
+			newSession.DoneSignal:Connect(function()
+				handleAction("reflect")
+			end)
 			session = newSession
 			updateUI()
 
@@ -191,9 +193,6 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 	end
 
 	local function closeRequested()
-		-- Don't reuse rotations when pressing done, only when stamping
-		activeSettings.Rotation = CFrame.new()
-
 		setActive(false)
 		destroySession()
 
@@ -205,8 +204,6 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 		if temporarilyIgnoreSelectionChanges then
 			return
 		end
-		-- Kill rotation if we switch selected object, it just feels weird to keep in practice.
-		activeSettings.Rotation = CFrame.new()
 		-- It might be interesting to try to preserve state here
 		-- but that doesn't seem to be working well in practice.
 		--tryCreateSession(if session then session.GetState() else nil)
@@ -214,10 +211,15 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 	end
 
 	local function doReset()
-		activeSettings.Rotation = CFrame.new() -- Need to reset rotation here
 		setActive(true)
 		tryCreateSession()
 	end
+
+	local AXIS_FOR_ACTION = {
+		flipX = Vector3.xAxis,
+		flipY = Vector3.yAxis,
+		flipZ = Vector3.zAxis,
+	}
 
 	function handleAction(action: string)
 		-- Ignore selection changes until we're done changing the selection
@@ -225,14 +227,23 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 		temporarilyIgnoreSelectionChanges = true
 		if action == "cancel" then
 			closeRequested()
-		elseif action == "stamp" then
+		elseif action == "reflect" then
 			assert(session)
-			local sessionState = session.Commit(false)
-			tryCreateSession(sessionState)
-		elseif action == "done" then
+			session.ReflectOverTarget()
+			if activeSettings.KeepOpenAfterReflecting then
+				doReset()
+			else
+				closeRequested()
+			end
+		elseif action == "flipX" or action == "flipY" or action == "flipZ" then
 			assert(session)
-			session.Commit(true)
-			closeRequested()
+			assert(AXIS_FOR_ACTION[action], "Known axis action")
+			session.FlipAroundPivot(AXIS_FOR_ACTION[action])
+			if activeSettings.KeepOpenAfterFlipping then
+				doReset()
+			else
+				closeRequested()
+			end
 		elseif action == "reset" then
 			doReset()
 		elseif action == "togglePanelized" then
