@@ -141,8 +141,8 @@ local function stopRecording(id: string)
 end
 
 type ReflectBasis = {
-	Position: Vector3,
-	Axis: Vector3,
+	Origin: Vector3,
+	Normal: Vector3,
 }
 
 local function createModelReflectSession(plugin: Plugin, targets: { Instance }, currentSettings: Settings.ModelReflectSettings, previousState: SessionState?)
@@ -187,15 +187,15 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 			local mouseAt = UserInputService:GetMouseLocation()
 			local mouseRay = workspace.CurrentCamera:ScreenPointToRay(mouseAt.X, mouseAt.Y)
 			local result = workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 5000)
-			if result then
+			if result and not result.Instance.Locked then
 				adorn.Parent = CoreGui
 				local normal = result.Normal
 				local at = result.Position
 				local back = spin(normal):Cross(normal).Unit
 				adornPart.CFrame = CFrame.fromMatrix(at, back, normal)
 				currentBasis = {
-					Position = at,
-					Axis = normal,
+					Origin = at,
+					Normal = normal,
 				}
 				return
 			end
@@ -244,7 +244,11 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 	end
 
 	local function reflectTargets(targets: {Instance}, basis: ReflectBasis)
-		doReflect(targets, basis.Position, basis.Axis)
+		doReflect(targets, {
+			Origin = basis.Origin,
+			Normal = basis.Normal,
+			CutoffDelay = currentSettings.CutoffDelay,
+		})
 	end
 
 	session.GetState = function(): SessionState
@@ -256,8 +260,9 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 	end
 	session.FlipAroundPivot = function(axis: Vector3)
 		reflectTargets(targets, {
-			Position = currentCenter.Position,
-			Axis = currentCenter:VectorToWorldSpace(axis),
+			Origin = currentCenter.Position,
+			Normal = currentCenter:VectorToWorldSpace(axis),
+			CutoffDelay = currentSettings.CutoffDelay,
 		})
 		changeSignal:Fire()
 

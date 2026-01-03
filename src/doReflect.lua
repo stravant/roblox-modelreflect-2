@@ -11,18 +11,22 @@ but only treat unions as basic square parts. Remove this assert to acknowledge.
 local querydescendants = require("./queryDescendants")
 local copyPartProps = require("./copyPartProps")
 
-local tooLongStart = 0
+type ParamsInternal = {
+	WarnAt: number,
+	CutoffAt: number,
+	TimedOut: boolean,
+}
+
 local hasGivenStillWorkingMessage = false
-local WarnAfter = 5
-_G.ReflectTimeout = 15
-local function tooLongCheck()
-	if not hasGivenStillWorkingMessage and (os.clock() - tooLongStart) > WarnAfter then
+local function tooLongCheck(params: ParamsInternal)
+	local now = os.clock()
+	if not hasGivenStillWorkingMessage and now > params.WarnAt then
 		hasGivenStillWorkingMessage = true
-		warn("Reflecting is taking a long time... will continue for " .. (_G.ReflectTimeout - WarnAfter) .. " more seconds.")
+		warn("Reflecting is taking a long time... will continue for " .. (params.CutoffAt - params.WarnAt) .. " more seconds.")
 		task.wait(0.1)
 	end
-	if (os.clock() - tooLongStart) > _G.ReflectTimeout then
-		error("Reflecting took to long. Run \"_G.ReflectTimeout = 137\" in the command bar with a number of seconds to allow more time.")
+	if now > params.CutoffAt then
+		error("Reflecting took too long. Modify the fail after setting to allow more time.")
 	end
 end
 
@@ -81,10 +85,12 @@ local function ReflectCFrame(cf: CFrame, overCFrame: CFrame, corner: boolean, at
 end
 
 local function IsCornerWedge(part: BasePart)
-	for _, ch in part:GetChildren() do
-		if ch:IsA('SpecialMesh') and ch.MeshType == Enum.MeshType.CornerWedge then
-			return true
-		end
+	local mesh = part:FindFirstChildWhichIsA('SpecialMesh')
+	if mesh and mesh.MeshType == Enum.MeshType.CornerWedge then
+		return true
+	end
+	if part:IsA("Part") and part.Shape == Enum.PartType.CornerWedge then
+		return true
 	end
 	return part:IsA('CornerWedgePart')
 end
@@ -172,12 +178,12 @@ local function GetSiblings(instance: Instance): {Instance}
 	end
 end
 
-local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[BasePart]: BasePart}, unionDepth: number, unionPath: string): BasePart?
+local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[BasePart]: BasePart}, unionDepth: number, unionPath: string, params: ParamsInternal): BasePart?
 	if unionDepth > 10 then
 		print(unionDepth, unionPath)
 		return nil
 	end
-	tooLongCheck()
+	tooLongCheck(params)
 	if plugin and part:IsA('UnionOperation') or part:IsA("IntersectOperation") then
 		local isIntersection = part:IsA("IntersectOperation")
 		
@@ -188,24 +194,27 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 		end
 		
 		local oldSiblings = GetSiblings(part)
-		local st, err = pcall(function()
+		local st1, err1 = pcall(function()
 			return SeparateUnion(part)
 		end)
 
-		if st then
-			local subParts = err
+		if st1 then
+			local subParts: {BasePart} = err1
 			for i, subPart in subParts do
-				subParts[i] = ReflectPart(subPart, axis, replacementPartMap, unionDepth + 1, unionPath .. "." .. subPart.Name)
+				local newPart = ReflectPart(subPart, axis, replacementPartMap, unionDepth + 1, unionPath .. "." .. subPart.Name, params)
+				if newPart then
+					table.insert(subParts, newPart)
+				end
 			end
 
-			st, err = pcall(function()
+			local st2, err2 = pcall(function()
 				local result = if isIntersection then IntersectTogether(subParts) else UnionTogether(subParts)
 				copyUnionProperties(part, result)
 				replacementPartMap[part] = result
 				return result
 			end)
-			if st then
-				local reflectedUnion = err
+			if st2 then
+				local reflectedUnion = err2
 				-- Reparent the stuff
 				for _, ch in children do
 					ch.Parent = reflectedUnion
@@ -214,7 +223,7 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				ReflectFaceItems(reflectedUnion)
 				return reflectedUnion -- err is the returned union
 			else
-				local errString = (err :: any) :: string
+				local errString = (err2 :: any) :: string
 				local firstPart = subParts[1]
 				if firstPart then
 					warn("Error Unioning `"..firstPart:GetFullName().."`: "..errString)
@@ -229,7 +238,7 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				return part
 			end
 		else
-			local errString = (err :: any) :: string
+			local errString = (err1 :: any) :: string
 			-- Separating may still create extra instances that weren't there
 			-- before even in the case where the separate fails, so we need to
 			-- have this extra code to remove those instances.
@@ -254,7 +263,7 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 	elseif plugin and part:IsA('NegateOperation') then
 		-- Negate itself should never fail
 		local notNegated = NegateUnion(part)
-		local reflected = ReflectPart(notNegated, axis, replacementPartMap, unionDepth + 1, unionPath)
+		local reflected = ReflectPart(notNegated, axis, replacementPartMap, unionDepth + 1, unionPath, params)
 		if reflected then
 			local reNegated = NegateUnion(reflected)
 			replacementPartMap[part] = reNegated
@@ -284,11 +293,11 @@ local function RecordModelAndAttachmentCFrames(root: Instance, oldCFrameMap: Old
 	end
 end
 
-local function ReflectPartsAndModelsRecursive(instance: Instance, axis: CFrame, oldCFrameMap: OldCFrameMap, modelPrimaryPartMap: {[Model]: BasePart?}, replacementPartMap: {[BasePart]: BasePart})
-	tooLongCheck()
+local function ReflectPartsAndModelsRecursive(instance: Instance, axis: CFrame, oldCFrameMap: OldCFrameMap, modelPrimaryPartMap: {[Model]: BasePart?}, replacementPartMap: {[BasePart]: BasePart}, params: ParamsInternal)
+	tooLongCheck(params)
 	if instance:IsA("BasePart") then
 		local oldCFrame = instance.CFrame
-		local reflected = ReflectPart(instance, axis, replacementPartMap, 0, "MODEL")
+		local reflected = ReflectPart(instance, axis, replacementPartMap, 0, "MODEL", params)
 		if reflected then
 			oldCFrameMap[reflected] = oldCFrame
 		end
@@ -297,7 +306,7 @@ local function ReflectPartsAndModelsRecursive(instance: Instance, axis: CFrame, 
 		instance.WorldPivot = ReflectCFrame(instance.WorldPivot, axis, false, false)
 	end
 	for _, ch in instance:GetChildren() do
-		ReflectPartsAndModelsRecursive(ch, axis, oldCFrameMap, modelPrimaryPartMap, replacementPartMap)
+		ReflectPartsAndModelsRecursive(ch, axis, oldCFrameMap, modelPrimaryPartMap, replacementPartMap, params)
 	end
 end
 
@@ -313,8 +322,8 @@ end
 -- that refered to those parts.
 -- We won't do all properties, but only the ones that typically matter (Part0
 -- and Part1 of welds)
-local function PatchReplacementPartsRecursive(instance: Instance, replacementPartMap: {[BasePart]: BasePart}, primaryPartMap: {[Model]: BasePart})
-	tooLongCheck()
+local function PatchReplacementPartsRecursive(instance: Instance, replacementPartMap: {[BasePart]: BasePart}, primaryPartMap: {[Model]: BasePart}, params: ParamsInternal)
+	tooLongCheck(params)
 	if instance:IsA("WeldConstraint") or instance:IsA("JointInstance") or instance:IsA("NoCollisionConstraint") then
 		patchProperty(instance, replacementPartMap, "Part0")
 		patchProperty(instance, replacementPartMap, "Part1")
@@ -327,7 +336,7 @@ local function PatchReplacementPartsRecursive(instance: Instance, replacementPar
 		end
 	end
 	for _, ch in instance:GetChildren() do
-		PatchReplacementPartsRecursive(ch, replacementPartMap, primaryPartMap)
+		PatchReplacementPartsRecursive(ch, replacementPartMap, primaryPartMap, params)
 	end	
 end
 
@@ -342,8 +351,8 @@ local function GetReferenceInstance(attachment: Attachment): Instance?
 	return nil
 end
 
-local function ReflectPartRelativeInstancesRecursive(instance: Instance, axis: CFrame, oldCFrameMap: OldCFrameMap)
-	tooLongCheck()
+local function ReflectPartRelativeInstancesRecursive(instance: Instance, axis: CFrame, oldCFrameMap: OldCFrameMap, params: ParamsInternal)
+	tooLongCheck(params)
 	if instance:IsA("Attachment") then
 		local reference = GetReferenceInstance(instance)
 		if reference then
@@ -395,7 +404,7 @@ local function ReflectPartRelativeInstancesRecursive(instance: Instance, axis: C
 		end
 	end
 	for _, ch in instance:GetChildren() do
-		ReflectPartRelativeInstancesRecursive(ch, axis, oldCFrameMap)
+		ReflectPartRelativeInstancesRecursive(ch, axis, oldCFrameMap, params)
 	end
 end
 
@@ -407,8 +416,8 @@ type ReenableData = boolean | {
 	[number]: CFrame,
 }
 
-local function DisableJointsRecursive(instance: Instance, reenableJoints: {[HasEnabled]: ReenableData})
-	tooLongCheck()
+local function DisableJointsRecursive(instance: Instance, reenableJoints: {[HasEnabled]: ReenableData}, params: ParamsInternal)
+	tooLongCheck(params)
 	if instance:IsA("WeldConstraint") or instance:IsA("JointInstance") or instance:IsA("Constraint") then
 		local instanceWithEnabled = (instance :: any) :: HasEnabled
         if instanceWithEnabled.Enabled then
@@ -427,7 +436,7 @@ local function DisableJointsRecursive(instance: Instance, reenableJoints: {[HasE
 		end
 	end
 	for _, ch in instance:GetChildren() do
-		DisableJointsRecursive(ch, reenableJoints)
+		DisableJointsRecursive(ch, reenableJoints, params)
 	end
 end
 
@@ -437,23 +446,39 @@ local function ReenableJoints(jointsToReenable: {[HasEnabled]: ReenableData})
 	end
 end
 
-local function doReflect(toReflect: {Instance}, ref_point: Vector3, ref_normal: Vector3)
-	print("Doing reflect of", #toReflect, "instances")
+export type Params = {
+	Origin: Vector3,
+	Normal: Vector3,
+	CutoffDelay: number?,
+}
+
+local function doReflect(toReflect: {Instance}, params: Params): boolean
 	hasGivenStillWorkingMessage = false
-	tooLongStart = os.clock()
-	local axis = CFrame.lookAt(ref_point, ref_point + ref_normal)
-	for i, instance in toReflect do
-		local jointsToReenable = {} :: {[HasEnabled]: ReenableData}
-		local oldCFrameMap = {} :: OldCFrameMap
-		local replacementPartMap = {} :: {[BasePart]: BasePart}
-		local primaryPartMap = {} :: {[Model]: BasePart}
-		RecordModelAndAttachmentCFrames(instance, oldCFrameMap)
-		DisableJointsRecursive(instance, jointsToReenable)
-		ReflectPartsAndModelsRecursive(instance, axis, oldCFrameMap, primaryPartMap, replacementPartMap)
-		PatchReplacementPartsRecursive(instance, replacementPartMap, primaryPartMap)
-		ReflectPartRelativeInstancesRecursive(instance, axis, oldCFrameMap)
-		ReenableJoints(jointsToReenable)
+	local axis = CFrame.lookAlong(params.Origin, params.Normal)
+	local cutoffDelay = params.CutoffDelay or math.huge
+	local paramsInternal = {
+		WarnAt = os.clock() + math.min(2, 0.5 * cutoffDelay),
+		CutoffAt = os.clock() + cutoffDelay,
+		TimedOut = false,
+	}
+	local success, err = pcall(function()
+		for i, instance in toReflect do
+			local jointsToReenable = {} :: {[HasEnabled]: ReenableData}
+			local oldCFrameMap = {} :: OldCFrameMap
+			local replacementPartMap = {} :: {[BasePart]: BasePart}
+			local primaryPartMap = {} :: {[Model]: BasePart}
+			RecordModelAndAttachmentCFrames(instance, oldCFrameMap)
+			DisableJointsRecursive(instance, jointsToReenable, paramsInternal)
+			ReflectPartsAndModelsRecursive(instance, axis, oldCFrameMap, primaryPartMap, replacementPartMap, paramsInternal)
+			PatchReplacementPartsRecursive(instance, replacementPartMap, primaryPartMap, paramsInternal)
+			ReflectPartRelativeInstancesRecursive(instance, axis, oldCFrameMap, paramsInternal)
+			ReenableJoints(jointsToReenable)
+		end
+	end)
+	if not success then
+		warn("Error reflecting parts: " .. err)
 	end
+	return success
 end
 
 return doReflect

@@ -7,6 +7,7 @@ export type ModelReflectSettings = PluginGuiTypes.PluginGuiSettings & {
 	SelectReflectedCopy: boolean,
 	KeepOpenAfterReflecting: boolean,
 	KeepOpenAfterFlipping: boolean,
+	CutoffDelay: number,
 }
 
 local function loadSettings(plugin: Plugin): ModelReflectSettings
@@ -30,6 +31,7 @@ local function loadSettings(plugin: Plugin): ModelReflectSettings
 		SelectReflectedCopy = if raw.SelectReflectedCopy ~= nil then raw.SelectReflectedCopy else true,
 		KeepOpenAfterReflecting = if raw.KeepOpenAfterReflecting ~= nil then raw.KeepOpenAfterReflecting else false,
 		KeepOpenAfterFlipping = if raw.KeepOpenAfterFlipping ~= nil then raw.KeepOpenAfterFlipping else true,
+		CutoffDelay = if raw.CutoffDelay ~= nil then raw.CutoffDelay else 5.0,
 	}
 end
 local function saveSettings(plugin: Plugin, settings: ModelReflectSettings)
@@ -48,6 +50,7 @@ local function saveSettings(plugin: Plugin, settings: ModelReflectSettings)
 		SelectReflectedCopy = settings.SelectReflectedCopy,
 		KeepOpenAfterReflecting = settings.KeepOpenAfterReflecting,
 		KeepOpenAfterFlipping = settings.KeepOpenAfterFlipping,
+		CutoffDelay = settings.CutoffDelay,
 	})
 end
 
