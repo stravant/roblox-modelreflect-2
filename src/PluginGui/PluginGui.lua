@@ -461,7 +461,7 @@ local function MainGuiViewport(props: {
 				Config = props.Config,
 				State = state,
 			}),
-		ActualTutorialGui = showTutorial and e(props.Config.TutorialElement, {
+		ActualTutorialGui = showTutorial and props.Config.TutorialElement and e(props.Config.TutorialElement, {
 			ClickedDone = function()
 				state.Settings.DoneTutorial = true
 				state.UpdatedSettings()
