@@ -190,12 +190,104 @@ local function trimMiddle(s: string, maxLength: number): string
 	end
 end
 
+local function roundComponent(c: number): number
+	return math.floor(c / 0.001 + 0.5) * 0.001
+end
+local function roundVectorForCSGFix(size: Vector3): Vector3
+	return Vector3.new(
+		roundComponent(size.X),
+		roundComponent(size.Y),
+		roundComponent(size.Z)
+	)
+end
+local function planeKeyFromPointNormal(point: Vector3, normal: Vector3): Vector3
+	local n = normal.Unit
+	local d = -n:Dot(point)
+
+	-- Canonicalize direction:
+	-- Ensure first non-zero component is positive
+	if n.X < 0 or
+	   (n.X == 0 and n.Y < 0) or
+	   (n.X == 0 and n.Y == 0 and n.Z < 0) then
+		n = -n
+		d = -d
+	end
+
+	-- Quantize
+	local a = roundComponent(n.X)
+	local b = roundComponent(n.Y)
+	local c = roundComponent(n.Z)
+	local dd = roundComponent(d)
+
+	return Vector3.new(a, b, c) * 1.23456 + Vector3.one * dd
+end
+
+local function getPartSizeIncludingMesh(part: BasePart): Vector3
+	local mesh = part:FindFirstChildWhichIsA("DataModelMesh")
+	if mesh then
+		return part.Size * mesh.Scale
+	else
+		return part.Size
+	end
+end
+
+-- If negative parts and positive parts have a size which is almost the same,
+-- this is likely to cause issues, so add a small padding to the negative size.
+-- Otherwise we'll get "slivers", where floating point error causes two parts
+-- which are exactly the same thickness and were previously perfectly aligned
+-- to come slightly out of alignment and cause a sliver to show up on one side.
+local DIRECTIONS = {
+	Vector3.xAxis,
+	Vector3.yAxis,
+	Vector3.zAxis,
+	-Vector3.xAxis,
+	-Vector3.yAxis,
+	-Vector3.zAxis,
+}
+local function fixCSGSeparateResults(parts: {BasePart})
+	local positivePlanes = {} :: {[Vector3]: boolean}
+	for _, part in parts do
+		if part:IsA("NegateOperation") then
+			continue
+		end
+		local halfSize = 0.5 * getPartSizeIncludingMesh(part)
+		local partCFrame = part.CFrame
+		for _, dir in DIRECTIONS do
+			local normal = partCFrame:VectorToWorldSpace(dir)
+			local point = partCFrame.Position + normal * math.abs(halfSize:Dot(dir))
+			local key = planeKeyFromPointNormal(point, normal)
+			positivePlanes[key] = true
+		end
+	end
+	for _, part in parts do
+		if part:IsA("NegateOperation") then
+			local originalCFrame = part.CFrame
+			local originalSize = getPartSizeIncludingMesh(part)
+			local size = roundVectorForCSGFix(originalSize)
+			local cframe = originalCFrame
+			for _, dir in DIRECTIONS do
+				local normal = originalCFrame:VectorToWorldSpace(dir)
+				local point = originalCFrame.Position + normal * math.abs((0.5 * originalSize):Dot(dir))
+				local key = planeKeyFromPointNormal(point, normal)
+				if positivePlanes[key] then
+					size += dir:Abs() * 0.001
+					cframe += normal * 0.0005
+				end
+			end
+			part.CFrame = cframe
+			part.Size = size
+		end
+	end
+end
+
 local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[BasePart]: BasePart}, unionDepth: number, unionPath: string, params: ParamsInternal): BasePart?
 	if unionDepth > params.MaxUnionDepth then
 		warn("Ignoring deep union nesting at `"..unionPath.."` to avoid performance issues. You can try increasing the max union depth.")
 		params.Warning = `Ignoring union nested {unionDepth} deep at {trimMiddle(unionPath, 40)}, try adjusting max depth.`
 		return nil
 	end
+	--print("Reflecting:", unionDepth, unionPath)
+	--workspace:GetAttributeChangedSignal("Step"):Wait()
 	tooLongCheck(params)
 	if plugin and part:IsA('UnionOperation') or part:IsA("IntersectOperation") then
 		local isIntersection = part:IsA("IntersectOperation")
@@ -203,13 +295,25 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 		-- Need to reparent the children to the reflected union
 		local children = part:GetChildren()
 		for _, ch in children do
-			ch.Parent = nil
+			-- May not be allowed to change the parent, E.g.: TouchTransmitter 🙃
+			pcall(function() ch.Parent = nil end)
 		end
-		
+
+		-- Keep original size. We need to return the part to the MeshSize before
+		-- separating it to ensure that NonUniform Unions work correctly.
+		local oldSize = part.Size
+		local oldScale = oldSize / part.MeshSize
+		local oldScaleCenter = part.CFrame
+		local reflectedScaleCenter = ReflectCFrame(oldScaleCenter, axis, false, false)
+		local partOperation = part :: PartOperation
+		partOperation.Size = part.MeshSize
+
 		local oldSiblings = GetSiblings(part)
 		local oldParent = part.Parent
 		local st1, err1 = pcall(function()
-			return SeparateUnion(part)
+			local separateResults = SeparateUnion(part)
+			fixCSGSeparateResults(separateResults)
+			return separateResults
 		end)
 
 		if st1 then
@@ -236,8 +340,17 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				-- Reparent the stuff
 				reflectedUnion.Parent = oldParent
 				for _, ch in children do
-					ch.Parent = reflectedUnion
+					pcall(function() ch.Parent = reflectedUnion end)
 				end
+				-- Restore the size
+				reflectedUnion.Size *= oldScale
+				-- Scale the position offset if there was one. Mathematically this should always
+				-- be zero, but in practice, separating and re-unioning may remove some jank
+				-- like zero-size geometry.
+				local offset = reflectedScaleCenter:PointToObjectSpace(reflectedUnion.Position)
+				reflectedUnion.Position = reflectedScaleCenter:PointToWorldSpace(offset * oldScale)
+				-- Restore the name
+				reflectedUnion.Name = part.Name
 				-- Flip the face items
 				ReflectFaceItems(reflectedUnion)
 				return reflectedUnion -- err is the returned union
@@ -254,8 +367,10 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 				params.Warning = warning
 				-- Put back the children
 				for _, ch in children do
-					ch.Parent = part
+					pcall(function() ch.Parent = part end)
 				end
+				-- Restore the size
+				partOperation.Size = oldSize
 				ReflectRawPart(part, axis)
 				return part
 			end
@@ -279,17 +394,21 @@ local function ReflectPart(part: BasePart, axis: CFrame, replacementPartMap: {[B
 			params.Warning = warning
 			-- Put back the children
 			for _, ch in children do
-				ch.Parent = part
+				pcall(function() ch.Parent = part end)
 			end
+			-- Restore the size
+			partOperation.Size = oldSize
 			ReflectRawPart(part, axis)
 			return part
 		end
 	elseif plugin and part:IsA('NegateOperation') then
 		-- Negate itself should never fail
+		local oldName = part.Name
 		local notNegated = NegateUnion(part)
 		local reflected = ReflectPart(notNegated, axis, replacementPartMap, unionDepth + 1, unionPath, params)
 		if reflected then
 			local reNegated = NegateUnion(reflected)
+			reNegated.Name = oldName
 			replacementPartMap[part] = reNegated
 			return reNegated
 		else
@@ -445,7 +564,7 @@ local function DisableJointsRecursive(instance: Instance, reenableJoints: {[HasE
 	tooLongCheck(params)
 	if instance:IsA("WeldConstraint") or instance:IsA("JointInstance") or instance:IsA("Constraint") then
 		local instanceWithEnabled = (instance :: any) :: HasEnabled
-        if instanceWithEnabled.Enabled then
+		if instanceWithEnabled.Enabled then
 			instanceWithEnabled.Enabled = false
 			if instance:IsA("JointInstance") then
 				local part0, part1 = instance.Part0, instance.Part1
