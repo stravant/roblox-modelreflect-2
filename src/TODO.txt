@@ -1,1 +1,2 @@
 * Figure out what to do with PivotOffset
+* Need to handle co-incident planes globally instead of locally (requires refactor pre-pass for CSG stuff)
