@@ -597,7 +597,7 @@ export type Params = {
 	MaxUnionDepth: number,
 }
 
-local function doReflect(toReflect: {Instance}, params: Params): (boolean, string?)
+local function doReflect(toReflect: {Instance}, params: Params): (boolean, string?, {[BasePart]: BasePart})
 	hasGivenStillWorkingMessage = false
 	local axis = CFrame.lookAlong(params.Origin, params.Normal)
 	local cutoffDelay = params.CutoffDelay or math.huge
@@ -607,6 +607,7 @@ local function doReflect(toReflect: {Instance}, params: Params): (boolean, strin
 		MaxUnionDepth = params.MaxUnionDepth,
 		Warning = nil,
 	}
+	local allReplacementParts = {} :: {[BasePart]: BasePart}
 	local success, err = pcall(function()
 		for i, instance in toReflect do
 			local jointsToReenable = {} :: {[HasEnabled]: ReenableData}
@@ -619,12 +620,15 @@ local function doReflect(toReflect: {Instance}, params: Params): (boolean, strin
 			PatchReplacementPartsRecursive(instance, replacementPartMap, primaryPartMap, paramsInternal)
 			ReflectPartRelativeInstancesRecursive(instance, axis, oldCFrameMap, paramsInternal)
 			ReenableJoints(jointsToReenable)
+			for old, new in replacementPartMap do
+				allReplacementParts[old] = new
+			end
 		end
 	end)
 	if not success then
 		warn("Error reflecting parts: " .. err)
 	end
-	return success, paramsInternal.Warning
+	return success, paramsInternal.Warning, allReplacementParts
 end
 
 return doReflect

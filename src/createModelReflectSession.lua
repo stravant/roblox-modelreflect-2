@@ -243,7 +243,7 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 		end
 	end
 
-	local function reflectTargets(targets: {Instance}, basis: ReflectBasis): (boolean, string?)
+	local function reflectTargets(targets: {Instance}, basis: ReflectBasis): (boolean, string?, {[BasePart]: BasePart})
 		return doReflect(targets, {
 			Origin = basis.Origin,
 			Normal = basis.Normal,
@@ -260,7 +260,8 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 		
 	end
 	session.FlipAroundPivot = function(axis: Vector3): (boolean, string?)
-		local success, warning = reflectTargets(targets, {
+		local oldSelection = Selection:Get()
+		local success, warning, replacementPartMap = reflectTargets(targets, {
 			Origin = currentCenter.Position,
 			Normal = currentCenter:VectorToWorldSpace(axis),
 			CutoffDelay = currentSettings.CutoffDelay,
@@ -272,6 +273,24 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 				recordingInProgress = startRecording()
 			end
 			return false
+		end
+
+		-- Update selection to reference replacement parts (e.g. re-unioned CSG parts)
+		if replacementPartMap then
+			local newSelection = {}
+			local didReplacement = false
+			for _, item in oldSelection do
+				local replacement = replacementPartMap[item]
+				if replacement then
+					didReplacement = true
+					table.insert(newSelection, replacement)
+				else
+					table.insert(newSelection, item)
+				end
+			end
+			if didReplacement then
+				Selection:Set(newSelection)
+			end
 		end
 
 		changeSignal:Fire()
