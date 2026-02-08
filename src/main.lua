@@ -197,9 +197,13 @@ return function(plugin: Plugin, panel: DockWidgetPluginGui, buttonClicked: Signa
 			session = newSession
 			updateUI()
 
-			-- Kill the session on undo
+			-- Recreate the session on undo, in case the selection changed.
+			-- Defer to avoid issues with the undo stack changing under
+			-- Immediate SignalBehavior.
 			undoCn = ChangeHistoryService.OnUndo:Connect(function()
-				destroySession()
+				task.defer(function()
+					tryCreateSession()
+				end)
 			end)
 
 			-- Activate the plugin here, only after we have a session
