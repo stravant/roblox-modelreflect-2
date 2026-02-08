@@ -245,7 +245,7 @@ local function ErrorDisplay(props: {
 	IsWarning: boolean,
 	LayoutOrder: number?,
 })
-	local messageColor = if props.IsWarning then Colors.WARNING_ORANGE else Colors.DARK_RED
+	local messageColor = if props.IsWarning then Colors.WARNING_YELLOW else Colors.DARK_RED
 	local flashOnChange = function(textLabel: TextLabel)
 		if not textLabel then
 			return
