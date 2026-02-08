@@ -105,10 +105,7 @@ return function(t: TestTypes.TestContext)
 		local part = makePart(CFrame.new(5, 0, 0))
 		doReflect({ part }, defaultParams())
 		-- An axis-aligned box reflected over an axis-aligned plane stays axis-aligned
-		local _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = part.CFrame:GetComponents()
-		local identityCF = CFrame.identity
-		local _, _, _, e00, e01, e02, e10, e11, e12, e20, e21, e22 = identityCF:GetComponents()
-		t.expect(math.abs(r00 - e00) < 0.01 and math.abs(r11 - e11) < 0.01 and math.abs(r22 - e22) < 0.01).toBe(true)
+		t.expect(part.CFrame.Rotation).toEqual(CFrame.identity)
 		part:Destroy()
 	end)
 
