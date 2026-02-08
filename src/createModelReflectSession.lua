@@ -257,7 +257,10 @@ local function createModelReflectSession(plugin: Plugin, targets: { Instance }, 
 		}
 	end
 	session.Update = function()
-		
+
+	end
+	session.SetBasis = function(basis: ReflectBasis?)
+		currentBasis = basis
 	end
 	session.FlipAroundPivot = function(axis: Vector3): (boolean, string?)
 		local oldSelection = Selection:Get()
